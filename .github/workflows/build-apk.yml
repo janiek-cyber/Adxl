@@ -1,1 +1,77 @@
 
+name: Build ADXL345 Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - "ADXL345_ANDROID_PROJEKT.zip"
+      - ".github/workflows/build-apk.yml"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Pobierz repozytorium
+        uses: actions/checkout@v6
+
+      - name: Sprawdz plik projektu ZIP
+        shell: bash
+        run: |
+          test -f ADXL345_ANDROID_PROJEKT.zip || {
+            echo "BRAK pliku ADXL345_ANDROID_PROJEKT.zip w glownym katalogu repozytorium."
+            exit 1
+          }
+
+      - name: Rozpakuj projekt Android
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/adxl345_project"
+          mkdir -p "$RUNNER_TEMP/adxl345_project"
+          unzip -q ADXL345_ANDROID_PROJEKT.zip -d "$RUNNER_TEMP/adxl345_project"
+          test -f "$RUNNER_TEMP/adxl345_project/settings.gradle"
+          test -f "$RUNNER_TEMP/adxl345_project/app/build.gradle"
+
+      - name: Ustaw Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Ustaw Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Zainstaluj Android SDK 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$RUNNER_TEMP/adxl345_project/local.properties"
+
+      - name: Ustaw Gradle 8.9
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.9"
+
+      - name: Zbuduj APK
+        working-directory: ${{ runner.temp }}/adxl345_project
+        run: gradle --no-daemon --stacktrace clean assembleDebug
+
+      - name: Przygotuj czytelna nazwe APK
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/apk_out"
+          cp "$RUNNER_TEMP/adxl345_project/app/build/outputs/apk/debug/app-debug.apk" \
+             "$RUNNER_TEMP/apk_out/ADXL345_SKOK_ANDROID.apk"
+
+      - name: Udostepnij APK do pobrania
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADXL345-APK
+          path: ${{ runner.temp }}/apk_out/ADXL345_SKOK_ANDROID.apk
+          if-no-files-found: error
+          retention-days: 30
